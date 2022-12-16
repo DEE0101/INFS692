@@ -1,0 +1,273 @@
+---
+title: "MODEL 3 CLUSTERING TECHNIQUE"
+author: "JUDISMA SALI"
+date: "2022-12-16"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Comparing the following clustering technique results:
+  (A) K-Means
+  (B) Hierarchical 
+  (C) Model Based
+Without considering the binary output and categorical variables in the dataset.
+  
+ 
+# LOAD PACKAGES
+
+```{r}
+# Helper packages
+ 
+library(dplyr)         # for data wrangling
+library(tidyverse)     # for filtering 
+library(readr)         # load dataset
+library(bestNormalize) # for normalizing the dataset
+library(ggplot2)       # data visualization
+library(stringr)       # for string functionality
+library(gridExtra)     # for manipulaiting the grid
+library(mclust)        # for model-based clustering
+
+# Modeling packages
+
+library(cluster)       # for general clustering algorithms
+library(factoextra)    # for visualizing cluster results
+
+```
+ 
+Note that we used the reprocessed data of radiomics_complete.csv (*RAD. NORMAL DATA.CSV*) in performing clustering technique.
+
+# LOAD THE REPROCESSED DATASET
+
+Radiomics Dataset 197 Rows (Observations) of 431 Columns (Variables)
+Failure.binary: binary property to predict
+
+```{r}
+radiomicsdt <- read_csv("RAD. NORMAL DATA.CSV")
+View(radiomicsdt)
+head(radiomicsdt)
+```
+
+# Scaling/Standardizing the Data
+
+Scaling is a way to compare data that is not measured in the same way. The scale function in R handles this task for you by providing a way to normalize the data so that the differences are weeded out which help us to make comparisons.
+
+```{r}
+radiomicsdf <- scale(radiomicsdt[c(3:431)]) # Large matrix (84513 elements, 787.9 kb)
+```
+
+# CHECKING FOR NULL AND MISSING VALUES
+
+ The result for checking null and missing values is 0 using *sum(is.n())*. Thus, there is no null and missing values.
+
+```{r}
+sum(is.na(radiomicsdf))
+```
+
+# (A) K-MEANS CLUSTERING
+
+K-means clustering is a method of vector quantization, originally from signal processing, that aims to partition n observations into k clusters in which each observation belongs to the cluster with the nearest mean, serving as a prototype of the cluster.
+
+```{r}
+kmeans(radiomicsdf, centers = 3, iter.max = 100, nstart = 100)
+clusters <- kmeans(radiomicsdf, centers = 3, iter.max = 100, nstart = 100)
+```
+# Hence, 
+Within cluster sum of squares by cluster:
+[1] 10412.77 24997.15 13419.94
+ (between_SS / total_SS =  41.9 %)
+
+Available components:
+
+[1] "cluster"      "centers"      "totss"        "withinss"    
+[5] "tot.withinss" "betweenss"    "size"         "iter"        
+[9] "ifault"
+
+# DETERMINING AND VISUALIZING OPTIMAL NUMBER OF CLUSTERS
+```{r}
+set.seed(123) # Determining Optimal Number of Clusters
+
+fviz_nbclust(radiomicsdf, kmeans, method = "wss") 
+fviz_nbclust(radiomicsdf, kmeans, method = "silhouette")
+fviz_nbclust(radiomicsdf, kmeans, method = "gap_stat") 
+
+clusters <- kmeans(radiomicsdf, centers = 2, iter.max = 100, nstart = 100)
+fviz_cluster(kmeans(radiomicsdf, centers = 2, iter.max = 100, nstart = 100), data = radiomicsdf)
+```
+
+
+# QUALITY OF K-MEANS PARTITION
+
+```{r}
+clusters$betweenss / clusters$totss
+```
+
+
+# VISUALIZING CLUSTERS USING ORIGINAL VARIABLES
+
+```{r}
+clusters <- kmeans(radiomicsdf, centers = 3, iter.max = 100, nstart = 100)
+radiomicsdt <- radiomicsdt |> mutate(cluster = clusters$cluster)
+radiomicsdt |> ggplot(aes(x = Failure, y = Entropy_cooc.W.ADC, col = as.factor(cluster))) + geom_point()
+```
+
+# (B) HEIRARCHICAL CLUSTERING
+
+Hierarchical clustering is an alternative approach to k-means clustering for identifying groups in a data set. In contrast to k-means, hierarchical clustering will create a hierarchy of clusters and therefore does
+not require us to pre-specify the number of clusters. Furthermore, hierarchical clustering has an added advantage over k-means clustering in that its results can be easily visualized using an attractive tree-based representation called a dendrogram.
+
+```{r}
+radiomicsdts <- radiomicsdt%>%
+  select_if(is.numeric) %>%  # selecting numeric columns
+  select(-Failure.binary) %>% # removing target column
+  mutate_all(as.double) %>%  
+  scale()
+data <- dist(radiomicsdts, method = "euclidean")
+
+```
+
+# USING COMPLETE LINKAGE
+
+```{r}
+ht1 <- hclust(data, method = "complete")
+plot(ht1, cex = 0.6)
+rect.hclust(ht1, k = 2, border = 1:4)
+```
+# COMPUTING MAXIMUM LINKAGE CLUSTERING WITH AGNES
+```{r}
+set.seed(123)
+ht2 <- agnes(radiomicsdts, method = "complete")
+ht2$ac
+```
+# COMPUTING DIVISIVE HIERARCHICAL CLUSTERING
+
+```{r}
+ht3 <- diana(radiomicsdts)
+```
+
+# DIVISE COEFFICIENT
+
+```{r}
+ht3$dc
+``` 
+
+# PLOTTING CLUSTER RESULTS
+
+```{r}
+plot1 <- fviz_nbclust(radiomicsdts, FUN = hcut, method = "wss", 
+                   k.max = 10) +
+  ggtitle("(A) Elbow method")
+plot2 <- fviz_nbclust(radiomicsdts, FUN = hcut, method = "silhouette", 
+                   k.max = 10) +
+  ggtitle("(B) Silhouette method")
+plot3 <- fviz_nbclust(radiomicsdts, FUN = hcut, method = "gap_stat", 
+                   k.max = 10) +
+  ggtitle("(C) Gap statistic")
+```
+
+# DISPLAYING PLOT SIDE BY SIDE
+
+```{r}
+gridExtra::grid.arrange(plot1, plot2, plot3, nrow = 1)
+```
+
+# WARDS METHOD
+
+```{r}
+ht4 <- hclust(data, method = "ward.D2" )
+
+#  Cuting tree into 4 groups
+
+sub_grp <- cutree(ht4, k = 8)
+
+# Number of members in each cluster
+
+table(sub_grp)
+```
+
+
+# (C) MODEL BASED CLUSTERING
+
+Model-based clustering is a statistical approach to data clustering. The observed (multivariate) data is assumed to have been generated from a finite mixture of component models. Each component model is a probability distribution, typically a parametric multivariate distribution.
+
+```{r}
+# APPLYING GMM MODEL WITH 3 COMPONENTS
+
+model3 <- Mclust(radiomicsdf[,1:10], G=3) 
+summary(model3)
+model4 = Mclust(radiomicsdf, 1:9) 
+
+summary(model4)
+
+```
+
+# PLOTTING THE RESULTS
+
+```{r}
+plot(model3, what = "density")
+plot(model3, what = "uncertainty")
+```
+
+
+```{r}
+legend_args <- list(x = "bottomright", ncol = 5)
+plot(model3, what = 'BIC', legendArgs = legend_args)
+plot(model3, what = 'classification')
+plot(model3, what = 'uncertainty')
+```
+
+
+```{r}
+probabilities <- model3$z 
+colnames(probabilities) <- paste0('C', 1:3)
+
+probabilities <- probabilities %>%
+  as.data.frame() %>%
+  mutate(id = row_number()) %>%
+  tidyr::gather(cluster, probability, -id)
+
+ggplot(probabilities, aes(probability)) +
+  geom_histogram() +
+  facet_wrap(~ cluster, nrow = 2)
+```
+
+
+```{r}
+uncertainty <- data.frame(
+  id = 1:nrow(radiomicsdf),
+  cluster = model3$classification,
+  uncertainty = model3$uncertainty
+)
+uncertainty %>%
+  group_by(cluster) %>%
+  filter(uncertainty > 0.25) %>%
+  ggplot(aes(uncertainty, reorder(id, uncertainty))) +
+  geom_point() +
+  facet_wrap(~ cluster, scales = 'free_y', nrow = 1)
+```
+
+
+
+```{r}
+cluster2 <- radiomicsdf %>%
+  scale() %>%
+  as.data.frame() %>%
+  mutate(cluster = model3$classification) %>%
+  filter(cluster == 2) %>%
+  select(-cluster)
+
+cluster2 %>%
+  tidyr::gather(product, std_count) %>%
+  group_by(product) %>%
+  summarize(avg = mean(std_count)) %>%
+  ggplot(aes(avg, reorder(product, avg))) +
+  geom_point() +
+  labs(x = "Average standardized consumption", y = NULL)
+```
+Thus, based on the data we get above;
+
+K-means clustering is the best number of clusters is 2 with SSwithin = 33.2%. 
+Hierarchical, gap statistics suggest 9 clusters with 84.90% ac and 84.29%. 
+Model based suggested 3 optimal number of clusters with BIC -2632.206.
+
+
